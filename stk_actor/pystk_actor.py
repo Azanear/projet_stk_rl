@@ -54,7 +54,7 @@ def get_actor(
     if state is None:
         return SamplingActor(action_space)
 
-    filename = "CHECKPOINT-GPUFAC/tqc_EXP15RACINGSCRATCH_1100000.pt"
+    filename = "stk_actor/pystk_actor.pth"
     logging.info(f"Loading trained model from {filename}...")
     state_dict = torch.load(filename)
     actor.load_state_dict(state_dict['agent'])
