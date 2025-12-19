@@ -56,6 +56,6 @@ def get_actor(
 
     filename = "stk_actor/pystk_actor.pth"
     logging.info(f"Loading trained model from {filename}...")
-    state_dict = torch.load(filename)
+    state_dict = torch.load(state)
     actor.load_state_dict(state_dict['agent'])
     return Agents(actor)
