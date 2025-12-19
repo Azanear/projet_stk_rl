@@ -16,7 +16,7 @@ from numpy import array, float32, int64
 def make_env(env_id, gamma):
 	
 	def thunk():
-		env = gym.make(env_id, render_mode="human", agent=AgentSpec(use_ai=True, name=player_name))
+		env = gym.make(env_id, render_mode="human", agent=AgentSpec(use_ai=False, name=player_name))
 		env = ConstantSizedObservations(env)
 		env = PolarObservations(env)
 		env = MinimalEssentialObsWrapper(env)

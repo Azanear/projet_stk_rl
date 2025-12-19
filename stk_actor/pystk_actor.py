@@ -1,16 +1,19 @@
 from typing import List, Callable
 from bbrl.agents import Agents, Agent
 import gymnasium as gym
+import torch
+import logging
 
 # Imports our Actor class
 # IMPORTANT: note the relative import
-from .actors import Actor, MyWrapper, ArgmaxActor, SamplingActor
+from .actors import Actor, MyWrapper, ArgmaxActor, SamplingActor, TQCRacingAgent, MinimalEssentialObsWrapper, ActionToDictWrapper, SkipCountdownWrapper
+from pystk2_gymnasium.stk_wrappers import ConstantSizedObservations, PolarObservations
 
 #: The base environment name (you can change that)
-env_name = "supertuxkart/flattened_multidiscrete-v0"
+env_name = "supertuxkart/full-v0"
 
 #: Player name (you must change that)
-player_name = "Example"
+player_name = "TQCars"
 
 
 def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
@@ -18,7 +21,10 @@ def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     environment"""
     return [
         # Example of a custom wrapper
-        lambda env: MyWrapper(env, option="1")
+        lambda env: SkipCountdownWrapper(env, skip_steps=10),
+        lambda env: ConstantSizedObservations(env),
+        lambda env: MinimalEssentialObsWrapper(env),
+        lambda env: ActionToDictWrapper(env),
     ]
 
 
@@ -34,11 +40,22 @@ def get_actor(
     :param action_space: The environment action space (with wrappers)
     :return: a BBRL agent
     """
-    actor = Actor(observation_space, action_space)
+    obs_dim = observation_space['continuous'].shape[0]
+    actor = TQCRacingAgent(
+        obs_dim=obs_dim,
+        continuous_dim=1,  # Steering
+        discrete_dim=5,    # brake, nitro, rescue, drift, fire, acceleration
+        hidden_dim=256,
+        n_quantiles=25,
+        n_critics=5
+    )
 
     # Returns a dummy actor
     if state is None:
         return SamplingActor(action_space)
 
-    actor.load_state_dict(state)
-    return Agents(actor, ArgmaxActor())
+    filename = "CHECKPOINT-GPUFAC/tqc_EXP15RACINGSCRATCH_1100000.pt"
+    logging.info(f"Loading trained model from {filename}...")
+    state_dict = torch.load(filename)
+    actor.load_state_dict(state_dict['agent'])
+    return Agents(actor)
