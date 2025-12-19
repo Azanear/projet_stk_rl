@@ -78,6 +78,7 @@ class MinimalEssentialObsWrapper(gym.ObservationWrapper):
         
         processed_obs = self._process_obs(obs)
         info['distance_down_track'] = float(obs['distance_down_track'][0])
+       
         return processed_obs,info
     
     def step(self, action):
@@ -199,19 +200,23 @@ class MinimalEssentialObsWrapper(gym.ObservationWrapper):
     def observation(self, observation):
         return self._process_obs(observation)
 
+
 class SkipCountdownWrapper(gym.ObservationWrapper):
     """Skip les N premiers steps où la course n'a pas commencé."""
     
-    def __init__(self, env, skip_steps=30):
+    def __init__(self, env, skip_steps=11):
         super().__init__(env)
         self.skip_steps = skip_steps
+    
+    def observation(self, obs):
+        # Retourne l'obs tel quel, sans modification
+        return obs
         
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         
         # Skip les premiers steps avec action nulle
         for _ in range(self.skip_steps):
-            # Action neutre pendant le countdown
             action = self.env.action_space.sample()
             to_send = {
                 'acceleration': np.zeros_like(action['acceleration']),
@@ -222,7 +227,7 @@ class SkipCountdownWrapper(gym.ObservationWrapper):
                 'nitro': np.zeros_like(action['acceleration']),
                 'rescue': np.zeros_like(action['acceleration'])
             }
-           
+            
             obs, _, terminated, truncated, info = self.env.step(to_send)
             
             if terminated or truncated:
@@ -230,10 +235,6 @@ class SkipCountdownWrapper(gym.ObservationWrapper):
                 break
         
         return obs, info
-    
-    def observation(self, observation):
-        return observation
-
 
 class NormalizedProgressRewardWrapper(gym.Wrapper):
     def __init__(self, env, progress_scale=200.0):
@@ -612,9 +613,16 @@ class TQCRacingAgent(Agent):
         return quantiles
     
     def forward(self, t: int):
+        
         observation = self.get(("env/env_obs/continuous", t))
-        action, _ = self.get_action(observation)
-        print(action)
+        action, _ = self.get_action(observation,True)
+        #print('ACTIONS = ',action)
+        #action[:, [0, 1]] = action[:, [1, 0]]
+        
+        if observation[0][-1] == 1.0:
+            action[0][5] = 1.0
+        
+       
         self.set(("action", t), action)
         
 
