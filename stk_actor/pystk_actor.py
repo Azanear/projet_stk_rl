@@ -21,7 +21,6 @@ def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     environment"""
     return [
         # Example of a custom wrapper
-        lambda env: SkipCountdownWrapper(env, skip_steps=10),
         lambda env: ConstantSizedObservations(env),
         lambda env: MinimalEssentialObsWrapper(env),
         lambda env: ActionToDictWrapper(env),

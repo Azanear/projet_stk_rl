@@ -618,9 +618,9 @@ class TQCRacingAgent(Agent):
         action, _ = self.get_action(observation,True)
         #print('ACTIONS = ',action)
         #action[:, [0, 1]] = action[:, [1, 0]]
-        
+        """
         if observation[0][-1] == 1.0:
-            action[0][5] = 1.0
+            action[0][5] = 1.0"""
         
        
         self.set(("action", t), action)
