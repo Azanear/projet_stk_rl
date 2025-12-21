@@ -43,9 +43,9 @@ def get_actor(
     """
     obs_dim = observation_space['continuous'].shape[0]
     actor = TQCRacingAgent(
-        obs_dim=obs_dim,
-        continuous_dim=1,  # Steering
-        discrete_dim=5,    # brake, nitro, rescue, drift, fire, acceleration
+        obs_dim=29,
+        continuous_dim=2,  # Steering
+        discrete_dim=2,    # brake, nitro, rescue, drift, fire, acceleration
         hidden_dim=256,
         n_quantiles=25,
         n_critics=5
