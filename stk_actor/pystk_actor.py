@@ -6,7 +6,7 @@ import logging
 
 # Imports our Actor class
 # IMPORTANT: note the relative import
-from .actors import Actor, MyWrapper, ArgmaxActor, SamplingActor, TQCRacingAgent, MinimalEssentialObsWrapper, ActionToDictWrapper, SkipCountdownWrapper
+from .actors import SamplingActor, TQCRacingAgent, MinimalEssentialObsWrapper, ActionToDictWrapper, SkipCountdownWrapper
 from pystk2_gymnasium.stk_wrappers import ConstantSizedObservations, PolarObservations
 
 #: The base environment name (you can change that)
@@ -21,7 +21,9 @@ def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     environment"""
     return [
         # Example of a custom wrapper
+        lambda env: SkipCountdownWrapper(env,10),
         lambda env: ConstantSizedObservations(env),
+        lambda env: PolarObservations(env),
         lambda env: MinimalEssentialObsWrapper(env),
         lambda env: ActionToDictWrapper(env),
     ]
@@ -52,9 +54,6 @@ def get_actor(
     # Returns a dummy actor
     if state is None:
         return SamplingActor(action_space)
-
-    filename = "stk_actor/pystk_actor.pth"
-    logging.info(f"Loading trained model from {filename}...")
     
     actor.load_state_dict(state['agent'])
     return Agents(actor)
