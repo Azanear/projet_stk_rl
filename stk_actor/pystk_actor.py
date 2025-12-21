@@ -52,9 +52,6 @@ def get_actor(
     # Returns a dummy actor
     if state is None:
         return SamplingActor(action_space)
-
-    filename = "stk_actor/pystk_actor.pth"
-    logging.info(f"Loading trained model from {filename}...")
     
     actor.load_state_dict(state['agent'])
     return Agents(actor)
