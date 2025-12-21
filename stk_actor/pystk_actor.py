@@ -6,7 +6,7 @@ import logging
 
 # Imports our Actor class
 # IMPORTANT: note the relative import
-from .actors import SamplingActor, TQCRacingAgent, MinimalEssentialObsWrapper, ActionToDictWrapper, SkipCountdownWrapper
+from .actors import TQCRacingAgent, MinimalEssentialObsWrapper, ActionToDictWrapper, SkipCountdownWrapper
 from pystk2_gymnasium.stk_wrappers import ConstantSizedObservations, PolarObservations
 
 #: The base environment name (you can change that)
@@ -50,10 +50,6 @@ def get_actor(
         n_quantiles=25,
         n_critics=5
     )
-
-    # Returns a dummy actor
-    if state is None:
-        return SamplingActor(action_space)
     
     actor.load_state_dict(state['agent'])
     return Agents(actor)
