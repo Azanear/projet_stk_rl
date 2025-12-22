@@ -6,7 +6,7 @@ import logging
 
 # Imports our Actor class
 # IMPORTANT: note the relative import
-from .actors import TQCRacingAgent, MinimalEssentialObsWrapper, ActionToDictWrapper, SkipCountdownWrapper
+from .actors import *
 from pystk2_gymnasium.stk_wrappers import ConstantSizedObservations, PolarObservations
 
 #: The base environment name (you can change that)
@@ -21,10 +21,11 @@ def get_wrappers() -> List[Callable[[gym.Env], gym.Wrapper]]:
     environment"""
     return [
         # Example of a custom wrapper
-        lambda env: SkipCountdownWrapper(env,10),
+        lambda env: SkipCountdownWrapper(env,11),
+        lambda env: NewRewardWrapper(env, offtrack_ratio=1.2),
         lambda env: ConstantSizedObservations(env),
         lambda env: PolarObservations(env),
-        lambda env: MinimalEssentialObsWrapper(env),
+        lambda env: Minimal56EssentialObsWrapper(env),
         lambda env: ActionToDictWrapper(env),
     ]
 
@@ -41,11 +42,10 @@ def get_actor(
     :param action_space: The environment action space (with wrappers)
     :return: a BBRL agent
     """
-    obs_dim = observation_space['continuous'].shape[0]
     actor = TQCRacingAgent(
-        obs_dim=29,
+        obs_dim=56,
         continuous_dim=2,  # Steering
-        discrete_dim=2,    # brake, nitro, rescue, drift, fire, acceleration
+        discrete_dim=1,    # brake, nitro, rescue, drift, fire, acceleration
         hidden_dim=256,
         n_quantiles=25,
         n_critics=5
