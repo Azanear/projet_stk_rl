@@ -22,20 +22,37 @@ import numpy as np
 import pygame
 
 from pystk2_gymnasium import AgentSpec, ConstantSizedObservations, PolarObservations
-from actors import MinimalEssentialObsWrapper, SkipCountdownWrapper
-
+from actors import MinimalEssentialObsWrapper, SkipCountdownWrapper, VariableTileVisitRewardWrapper
+from actors import *
 
 # =============================
 # Config
 # =============================
 FPS = 10
-DATASET_PATH = "dataset-rewardbase.npz"
+DATASET_PATH = "YOOOOOO.npz"
 
 # Manual smoothing
-STEER_STEP = 0.14
-STEER_RETURN = 0.50
+STEER_STEP = 0.12
+STEER_RETURN = 0.12
 
-IDLE_ACCEL = 0.30
+IDLE_ACCEL = 0.15
+rec_on = False
+records = []      # buffer du chunk courant
+chunk_id = 0      # compteur de fichiers (1,2,3...)
+
+
+ferrari = TQCRacingAgent(56,2,1,256)
+dir_path = sys.path[0]
+filename = f"{dir_path}/pystk_actor.pth"
+ferrari.load_state_dict(torch.load(filename, map_location=torch.device('cpu'))['agent'])
+
+
+from pathlib import Path
+import itertools
+
+def chunk_path(base_path: str, chunk_id: int) -> str:
+    p = Path(base_path)
+    return str(p.with_name(f"{p.stem}_{chunk_id:04d}{p.suffix}"))
 
 
 def to_float(x):
@@ -67,7 +84,7 @@ def make_manual_action(steer, accel, brake, drift):
         "steer": np.array([[steer]], dtype=np.float32),
         "acceleration": np.array([[accel]], dtype=np.float32),
         "brake": np.array([[brake]], dtype=np.float32),
-        "drift": np.array([[drift]], dtype=np.float32),
+        "drift": 0,
         "nitro": 1,
         "rescue": 0,
         "fire": 1,
@@ -136,13 +153,14 @@ def main():
         difficulty=2,
         max_episode_steps=1500,
     )
-    env = SkipCountdownWrapper(env, skip_steps=10)
+    env = SkipCountdownWrapper(env, skip_steps=30)
+    env = NewRewardWrapper(env)
     env = ConstantSizedObservations(env)
     env = PolarObservations(env)
-    env = MinimalEssentialObsWrapper(env)
+    env = Minimal56EssentialObsWrapper(env)
 
     obs, info = env.reset()
-
+    print("Obs shape - ", obs["continuous"].shape)
     # =============================
     # State
     # =============================
@@ -162,6 +180,7 @@ def main():
     # recording
     rec_on = False
     records = []
+    chunk_id = 0
 
     print("\n=== STK MANUAL + RECORDER ===")
     print("LEFT/RIGHT: steer (inverted) | UP: accel | DOWN: brake | SHIFT: drift")
@@ -190,13 +209,20 @@ def main():
                     print(f"🔄 Reset episode -> {episode}")
 
                 elif event.key == pygame.K_t:
-                    rec_on = not rec_on
-                    print(f"⏺️ REC {'ON' if rec_on else 'OFF'}")
-                    # Optional: save every time you stop recording
-                    if not rec_on:
-                        save_dataset(DATASET_PATH, records)
-
-        # -------- manual keys --------
+                    if rec_on:
+                        # STOP -> save current chunk into a NEW file
+                        out_path = chunk_path(DATASET_PATH, chunk_id)
+                        print(f"⏹️ REC OFF -> saving {out_path}", flush=True)
+                        save_dataset(out_path, records)
+                        rec_on = False
+                    else:
+                        # START -> create new chunk buffer
+                        chunk_id += 1
+                        records = []
+                        rec_on = True
+                        out_path = chunk_path(DATASET_PATH, chunk_id)
+                        print(f"⏺️ REC ON  -> recording to {out_path}", flush=True)
+                        # -------- manual keys --------
         keys = pygame.key.get_pressed()
 
         # Steering (INVERTED)
@@ -219,16 +245,24 @@ def main():
             accel = IDLE_ACCEL
             brake = 0.0
 
-        drift = 1.0 if keys[pygame.K_LSHIFT] else 0.0
+        drift = 1.0 if keys[pygame.K_d] else 0.0
 
-        # -------- step env --------
+        # -------- step env -----f---
         if not paused:
-            action = make_manual_action(steer, accel, brake, drift)
+            action_to_send = make_manual_action(steer, accel, brake, drift)
+            action = env.action_space.sample() 
+
 
             # keep obs before step if you want (s,a,r,s') dataset style:
             obs_before = np.asarray(obs["continuous"], dtype=np.float32).copy()
+       
+            ff_actions,_ = ferrari.get_action(torch.tensor(obs_before).unsqueeze(0))
 
-            obs, reward, terminated, truncated, info = env.step(action)
+            action_ferrari = ferrari.prepare_to_send_actions(ff_actions)
+
+            #action_to_send['acceleration'] = 0.2
+            obs, reward, terminated, truncated, info = env.step(action_ferrari)
+
             done = bool(terminated or truncated)
 
             step += 1
@@ -238,7 +272,7 @@ def main():
                 records.append(
                     {
                         "obs": obs_before,
-                        "action": action_to_flat(action),
+                        "action": action_to_flat(action_to_send),
                         "reward": float(reward),
                         "done": done,
                         "info": dict(info) if isinstance(info, dict) else info,
