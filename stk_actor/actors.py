@@ -3,6 +3,13 @@ from bbrl.agents import Agent
 import torch
 import torch.nn as nn
 import numpy as np
+import numpy as np
+import gymnasium as gym
+import numpy as np
+from pystk2_gymnasium import AgentSpec
+from pystk2_gymnasium import ConstantSizedObservations,PolarObservations
+
+
 
 class MyWrapper(gym.ActionWrapper):
     def __init__(self, env, option: int):
@@ -35,7 +42,7 @@ class ActionToDictWrapper(gym.ActionWrapper):
         #{'acceleration','steer', 'brake', 'drift', 'fire', 'nitro', 'rescue'}
         to_send = {
             'steer': flat_action[0:1],
-            'acceleration': 1.0,
+            'acceleration': flat_action[1:2],
             'brake': flat_action[2:3],
             'drift': 0,
             'fire': 1,
@@ -44,26 +51,6 @@ class ActionToDictWrapper(gym.ActionWrapper):
         }
         return to_send
     
-import numpy as np
-
-
-
-import gymnasium as gym
-import numpy as np
-from pystk2_gymnasium import AgentSpec
-from pystk2_gymnasium import ConstantSizedObservations,PolarObservations
-
-
-import numpy as np
-
-
-import gymnasium as gym
-import numpy as np
-from pystk2_gymnasium import AgentSpec
-from pystk2_gymnasium import ConstantSizedObservations,PolarObservations
-
-
-import numpy as np
  
 def angle_to_sincos(angle_rad: float):
     """
@@ -170,99 +157,6 @@ def nearest_items_features(items_position, items_type, max_dist=20.0, n_items=3)
     return features
 
 
-
-class MinimalEssentialObsWrapper(gym.Wrapper):
-    """
-    Extrait uniquement les observations essentielles pour le racing.
-    Adapté au format exact de SuperTuxKart.
-    
-    Réduit de ~92 dims continuous → ~20 dims continuous
-    """
-    
-    def __init__(self, env):
-        super().__init__(env)
-        
-        self.observation_space = gym.spaces.Dict({
-            'continuous': gym.spaces.Box(
-                low=-np.inf, 
-                high=np.inf, 
-                shape=(28,),
-                dtype=np.float32
-            )
-        })
-    
-    def reset(self, **kwargs):
-        obs,info = self.env.reset(**kwargs)
-        processed_obs = self._process_obs(obs)
-       
-        self.observation_space = gym.spaces.Dict({
-            'continuous': gym.spaces.Box(
-                low=-np.inf, 
-                high=np.inf, 
-                shape=(28,),
-                dtype=np.float32
-            )
-        })
-
-        info['distance_down_track'] = obs['distance_down_track']
-        info['off_track'] = processed_obs['continuous'][-2]
-        return processed_obs,info
-    
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        
-        processed_obs = self._process_obs(obs)
-        info['distance_down_track'] = obs['distance_down_track']
-        info['off_track'] = processed_obs['continuous'][-2]
-        return processed_obs, reward, terminated, truncated, info
-    
-    def normalize_dist(self,dist, max_dist):
-        """
-        Normalize a distance into [0, 1] with clipping.
-        """
-        return np.clip(dist / max_dist, 0.0, 1.0)
-    
-    def _process_obs(self, obs):
-        # IT IS POLAR OBSERVATIONS 
-        continuous_features = []
-         
-        vel_yaw   = float(obs['velocity'][0])   # angle horizontal (rad)
-        speed     = float(obs['velocity'][2]) / 40.  # ✅ SPEED (m/s)
-        continuous_features.extend([vel_yaw,speed])
-        
-        cp_yaw,_,dist = obs["center_path"]
-        cp_sin, cp_cos = angle_to_sincos(cp_yaw)
-        
-        dist_norm = self.normalize_dist(dist, obs['paths_width'][0][0])
-        continuous_features.extend([cp_sin, cp_cos,dist_norm])
-       
-        exists,dist_normed,sin_yaw,cos_yaw = target_ahead_features(obs['karts_position'][0], max_dist=15.0, fov_deg=20.0, min_dist=0.5)
-        continuous_features.extend([exists,dist_normed,sin_yaw,cos_yaw])
-
-        itemsss = nearest_items_features(obs['items_position'], obs['items_type'], max_dist=50.0, n_items=3)
-        continuous_features.extend(itemsss)
-      
-        continuous_features.extend([float(obs['max_steer_angle'][0]),float(obs['energy'][0]) / 10.0])
-        
-        curr_w_raw = obs['paths_width'][0][0]
-        curr_w = float(curr_w_raw)
-        off_track = 1.0 if abs(float(obs['center_path_distance'][0])) > (curr_w / 2) + 3.5 else 0.0
-
-
-        continuous_features.append(off_track)
-
-        start_horizontal_yaw,_,start_dist = obs['paths_start'][0]
-        end_horizontal_yaw,_,end_dist = obs['paths_end'][0]
-
-        continuous_features.append((end_dist - start_dist) / (obs['paths_distance'][0][-1] - obs['paths_distance'][0][0]) )
-     
-        
-        return {
-            'continuous': np.array(continuous_features, dtype=np.float32)
-        }
-    
-
-
 class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
     """
     Extrait uniquement les observations essentielles pour le racing.
@@ -296,7 +190,7 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
         self.prev_steer = 0.0
         self.low_speed_norm = float(info.get("nb_time_low_speed", 0.0)) / 50.0
 
-        processed_obs = self.observation(obs)  # ✅ IMPORTANT : passe par observation()
+        processed_obs = self.observation(obs) 
       
 
         self.observation_space = gym.spaces.Dict({
@@ -454,71 +348,6 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
         return obs
     
 
-
-
-class VariableTileVisitRewardWrapper(gym.Wrapper):
-    def __init__(self, env, offtrack_ratio=1.2):
-        super().__init__(env)
-        self.offtrack_ratio = float(offtrack_ratio)
-
-        self.nb_tile = 1
-        self.tile_starts = None
-        self.tile_ends = None
-
-        self.visited_idx = set()
-
-    def reset(self, **kwargs):
-        obs, info = self.env.reset(**kwargs)
-
-        pd = np.asarray(obs["paths_distance"], dtype=np.float64)  # shape (N, 2)
-        self.tile_starts = pd[:, 0].copy()
-        self.tile_ends   = pd[:, 1].copy()
-        self.nb_tile = int(pd.shape[0])
-
-        self.visited_idx = set()
-        return obs, info
-
-    def _pos_ratio(self, obs) -> float:
-        curr_w = float(obs["paths_width"][0][0])
-        off_track = 1.0 if abs(float(obs["center_path_distance"][0])) > (curr_w / 2) + 1.0 else 0.0
-        return off_track
-
-    def _tile_index_from_s(self, s: float) -> int:
-        # find closest start (robust to float noise)
-        return int(np.argmin(np.abs(self.tile_starts - s)))
-
-    def _tile_index_from_ddt(self, ddt: float) -> int:
-        # tile_ends is increasing along the track
-        idx = int(np.searchsorted(self.tile_ends, ddt, side="right"))
-        return min(max(idx, 0), self.nb_tile - 1)
-
-    def step(self, action):
-        obs, _, terminated, truncated, info = self.env.step(action)
-
-        reward = -0.1
-
-        # Option A: use s (your method)
-        #s = float(obs["paths_distance"][0][0])
-        #tile_idx = self._tile_index_from_s(s)
-
-        # Option B: better: use distance_down_track (more stable)
-        ddt = float(obs["distance_down_track"][0])
-        tile_idx = self._tile_index_from_ddt(ddt)
-        
-        if tile_idx not in self.visited_idx:
-            self.visited_idx.add(tile_idx)
-            reward += 1000.0 / float(self.nb_tile)
-
-        """
-        off_track = self._pos_ratio(obs)
-        if off_track:
-            reward -= 100
-            terminated = True
-        """
-        return obs, float(reward), terminated, truncated, info
-
-   
-
 class NewRewardWrapper(gym.ObservationWrapper):
     def __init__(self, env, offtrack_ratio=1.2):
         super().__init__(env)
@@ -560,9 +389,9 @@ class NewRewardWrapper(gym.ObservationWrapper):
         return min(max(idx, 0), self.nb_tile - 1)
 
     def step(self, action):
-        obs, _, terminated, truncated, info = self.env.step(action)
+        obs, reward, terminated, truncated, info = self.env.step(action)
 
-        
+        """
         reward = -0.1
 
         # Option A: use s (your method)
@@ -573,7 +402,6 @@ class NewRewardWrapper(gym.ObservationWrapper):
             
         else:
             self.nb_time_low_speed = 0
-
        
         # Option B: better: use distance_down_track (more stable)
         ddt = float(obs["distance_down_track"][0])
@@ -588,15 +416,12 @@ class NewRewardWrapper(gym.ObservationWrapper):
         if self.nb_time_low_speed > 50:
             reward = -100
             terminated = True
-
+        """
         info['nb_time_low_speed'] = self.nb_time_low_speed
         return obs, float(reward), terminated, truncated, info
 
     def observation(self, obs):
         return obs
-
-
-
 
 class SkipCountdownWrapper(gym.ObservationWrapper):
     """Skip les N premiers steps où la course n'a pas commencé."""
@@ -835,9 +660,12 @@ class TQCRacingAgent(Agent):
 
     def forward(self, t: int):
         self.eval()
-        observation = self.get(("env/env_obs/continuous", t))
-       
-        action, _ = self.get_action(observation, deterministic=True)
-        
+        if t <= 10:
+            action = np.zeros((1,3),dtype=np.float32)
+        else:
+            observation = self.get(("env/env_obs/continuous", t))
+            action, _ = self.get_action(observation, deterministic=True)
+            action[:,1] = 1.0  # Full acceleration
+            
         self.set(("action", t), action)
         
