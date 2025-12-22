@@ -23,22 +23,26 @@ class ActionToDictWrapper(gym.ActionWrapper):
 
     def action(self, action):
         # Sécurité : passage sur CPU et conversion Numpy si c'est un tenseur
-        if hasattr(action, "cpu"):
-            action = action.cpu().numpy()
+        if isinstance(action, torch.Tensor):
+            flat_action = action.cpu().numpy()
+        else:
+            flat_action = action
         
-        # Gestion du batch dimension éventuelle (si action arrive en [1, 7])
-        if len(action.shape) > 1:
-            action = action[0]
-
-        return {
-            'steer': float(action[0]),
-            'acceleration': float(action[1]),
-            'brake': float(action[2]),
-            'drift': 0.0,
-            'nitro': 1.0,
-            'rescue': 0.0,
-            'fire': 1.0
+       
+        # Extract components
+        # THE FLAT ACTION WILL CONTAIN {'acceleration','steer', 'brake', 'drift', 'nitro', 'rescue'}
+        # FIRE WONT BE HERE THOUGHH
+        #{'acceleration','steer', 'brake', 'drift', 'fire', 'nitro', 'rescue'}
+        to_send = {
+            'steer': flat_action[0:1],
+            'acceleration': 1.0,
+            'brake': flat_action[2:3],
+            'drift': 0,
+            'fire': 1,
+            'nitro': 1,
+            'rescue': 0
         }
+        return to_send
     
 import numpy as np
 
@@ -274,7 +278,7 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
             'continuous': gym.spaces.Box(
                 low=-np.inf, 
                 high=np.inf, 
-                shape=(28,),
+                shape=(56,),
                 dtype=np.float32
             )
         })
@@ -282,6 +286,7 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
         self.prev_ddt = 0.0
         self.prev_cp_yaw = 0.0
         self.prev_steer = 0.0
+        self.low_speed_norm = 0.0  # <- stocké depuis info
 
     def reset(self, **kwargs):
         obs,info = self.env.reset(**kwargs)
@@ -289,19 +294,16 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
         self.prev_ddt = float(obs["distance_down_track"][0])
         self.prev_cp_yaw = float(obs["center_path"][0])
         self.prev_steer = 0.0
+        self.low_speed_norm = float(info.get("nb_time_low_speed", 0.0)) / 50.0
 
-        processed_obs = self._process_obs(obs)
+        processed_obs = self.observation(obs)  # ✅ IMPORTANT : passe par observation()
       
 
-        processed_obs['continuous'] = np.concatenate([processed_obs['continuous'], 
-                                                      np.array([self.prev_steer], dtype=np.float32)])
-        
-        processed_obs['continuous'] = np.concatenate([processed_obs['continuous'], np.array([info['nb_time_low_speed'] / 50], dtype=np.float32)])
         self.observation_space = gym.spaces.Dict({
             'continuous': gym.spaces.Box(
                 low=-np.inf, 
                 high=np.inf, 
-                shape=(28,),
+                shape=(56,),
                 dtype=np.float32
             )
         })
@@ -330,12 +332,12 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
         self.prev_steer = action['steer'] if isinstance(action, dict) else action[0]
         obs, reward, terminated, truncated, info = self.env.step(action)
         
-        processed_obs = self._process_obs(obs)
-
         self.prev_steer = float(np.asarray(action["steer"]).reshape(-1)[0])
-        processed_obs['continuous'] = np.concatenate([processed_obs['continuous'], np.array([self.prev_steer], dtype=np.float32)])
-        processed_obs['continuous'] = np.concatenate([processed_obs['continuous'], np.array([info['nb_time_low_speed'] / 50], dtype=np.float32)])
+        self.low_speed_norm = float(info.get("nb_time_low_speed", 0.0)) / 50.0
 
+        processed_obs = self.observation(obs)
+
+      
         info['distance_down_track'] = obs['distance_down_track']
         info['off_track'] = processed_obs['continuous'][-3]
 
@@ -443,8 +445,13 @@ class Minimal56EssentialObsWrapper(gym.ObservationWrapper):
             'continuous': np.array(continuous_features, dtype=np.float32)
         }
         
-    def observation(self, observation):
-        return self._process_obs(observation)
+    def observation(self, obs):
+
+        obs = self._process_obs(obs)
+        obs['continuous'] = np.concatenate([obs['continuous'], np.array([self.prev_steer], dtype=np.float32)])
+        obs['continuous'] = np.concatenate([obs['continuous'], np.array([self.low_speed_norm], dtype=np.float32)])
+
+        return obs
     
 
 
@@ -585,8 +592,9 @@ class NewRewardWrapper(gym.ObservationWrapper):
         info['nb_time_low_speed'] = self.nb_time_low_speed
         return obs, float(reward), terminated, truncated, info
 
-    def observation(self, observation):
-        return observation
+    def observation(self, obs):
+        return obs
+
 
 
 
@@ -621,10 +629,8 @@ class SkipCountdownWrapper(gym.ObservationWrapper):
                 break
         
         return obs, info
-    
-    def observation(self, observation):
-        return observation
-
+    def observation(self, obs):
+        return obs
 
 
 
@@ -828,8 +834,10 @@ class TQCRacingAgent(Agent):
         return quantiles
 
     def forward(self, t: int):
+        self.eval()
         observation = self.get(("env/env_obs/continuous", t))
        
         action, _ = self.get_action(observation, deterministic=True)
+        
         self.set(("action", t), action)
         
