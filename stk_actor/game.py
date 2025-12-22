@@ -83,7 +83,8 @@ def save_dataset(path, records):
 # Ferrari (AI)
 # =============================
 ferrari = TQCRacingAgent(56, 2, 1, 256)
-filename = "/Users/abdulhamid/Documents/projet_stk_rl/stk_actor/tqc_LAST_DAGGER_300000.pt"
+dir_path = sys.path[0]
+filename = f"{dir_path}/pystk_actor.pth"
 ckpt = torch.load(filename, map_location=torch.device("cpu"))
 ferrari.load_state_dict(ckpt["agent"])
 ferrari.eval()
@@ -99,13 +100,16 @@ def get_ai_action(obs_continuous: np.ndarray):
         # --- OPTION A: tu as get_action() + prepare_to_send_actions() ---
         if hasattr(ferrari, "get_action") and hasattr(ferrari, "prepare_to_send_actions"):
             ff_actions, _ = ferrari.get_action(x)
-            return ferrari.prepare_to_send_actions(ff_actions)
+            action = ferrari.prepare_to_send_actions(ff_actions)
+            action['acceleration'] = 1.0  # override accel to full
+            return action
 
         # --- OPTION B: tu as juste forward qui renvoie déjà les actions ---
         if callable(ferrari):
             out = ferrari(x)
             # si out est déjà un dict action → retourne
             if isinstance(out, dict):
+                out['acceleration'] = 1.0  # override accel to full
                 return out
 
     # fallback (au cas où)
