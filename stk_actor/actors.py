@@ -41,9 +41,9 @@ class ActionToDictWrapper(gym.ActionWrapper):
         # FIRE WONT BE HERE THOUGHH
         #{'acceleration','steer', 'brake', 'drift', 'fire', 'nitro', 'rescue'}
         to_send = {
-            'steer': flat_action[0:1],
-            'acceleration': flat_action[1:2],
-            'brake': flat_action[2:3],
+            'steer': flat_action[0],
+            'acceleration': flat_action[1],
+            'brake': flat_action[2],
             'drift': 0,
             'fire': 1,
             'nitro': 1,
@@ -661,11 +661,10 @@ class TQCRacingAgent(Agent):
     def forward(self, t: int):
         self.eval()
         if t <= 10:
-            action = np.zeros((1,3),dtype=np.float32)
+            action = torch.zeros((1,3), dtype=torch.float32)
         else:
             observation = self.get(("env/env_obs/continuous", t))
             action, _ = self.get_action(observation, deterministic=True)
             action[:,1] = 1.0  # Full acceleration
-            
         self.set(("action", t), action)
         
